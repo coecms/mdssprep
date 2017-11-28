@@ -25,6 +25,8 @@ import imp
 from numpy import array, arange, dtype
 from numpy.testing import assert_array_equal, assert_array_almost_equal
 import os, sys
+from pathlib import Path
+from shutil import rmtree
 
 sys.path.insert(1, os.path.join(sys.path[0], '..'))
 
@@ -32,11 +34,37 @@ import mdssprep
 
 verbose = True
 
+root = Path('test') / Path('test_dir')
+
+def make_file(path,size):
+    with open(path, "w") as file:
+        file.truncate(size)
+
+def make_test_files():
+    root.mkdir(parents=False,exist_ok=True)
+    for f in range(1,10):
+        f = root / Path(str(f))
+        f.touch()
+    for f in range(10,100,10):
+        make_file(root / Path(str(f)),mdssprep.one_meg*f)
+
+def del_test_files():
+    rmtree(root)
+
+def setup_module(module):
+    if verbose: print ("setup_module      module:%s" % module.__name__)
+    del_test_files()
+    make_test_files()
+ 
+def teardown_module(module):
+    if verbose: print ("teardown_module   module:%s" % module.__name__)
+    # del_test_files()
+
 def test_make_directory_class():
-    t = mdssprep.Directory('.')
+    t = mdssprep.Directory('test/test_dir')
 
     print(t.path, t.minsize, t.maxsize)
 
-    # for f in t.iterdir():
-    #     if f.is_file():
-    #         print(f,f.stat().st_size)
+    print(t.hash())
+
+    t.archive()

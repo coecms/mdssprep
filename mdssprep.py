@@ -1,7 +1,7 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 """
-Copyright 2015 ARC Centre of Excellence for Climate Systems Science
+Copyright 2017 ARC Centre of Excellence for Climate Systems Science
 
 author: Aidan Heerdegen <aidan.heerdegen@anu.edu.au>
 
@@ -23,18 +23,11 @@ import os
 import sys
 import netCDF4 as nc
 import argparse
-import re
 from warnings import warn
-from shutil import move
-from collections import defaultdict
-import math
-import operator
-import numpy as np
-import numpy.ma as ma
-import multiprocessing as mp
-
 from pathlib import Path
-
+import string
+import random
+from hashlib import blake2b
 
 # A couple of hard-wired executable paths that might need changing
 
@@ -52,6 +45,8 @@ one_tb = 1099511627776.
 
 policy = { "minsize" : 20.*one_meg, "maxsize" : 5.*one_tb, "uncompressible" : ["is_netCDF",] }
 
+strings = [*string.ascii_letters,*string.digits]
+
 class Directory(object):
     """A directory on the filesystem
 
@@ -59,6 +54,7 @@ class Directory(object):
         path: a Path object for the directory
         minsize: size (in bytes) below which a file should be archived
         prepped: logical indicating if the directory has been prepared for archiving
+        tarfiles: list of files to add to the archive
     """
 
     def __init__(self, path, **kwargs):
@@ -67,17 +63,49 @@ class Directory(object):
         kwargs = {**policy, **kwargs}
         for key, val in kwargs.items():
             setattr(self, key, val)
+        self.tarfiles = []
+        self.subdirs = []
+        self.prepped = False
                 
     def archive(self):
         """Archive all files in the directory that meet the size and type criteria
         """
         for child in self.path.iterdir():
             if child.is_dir():
-                pass
                 # Do something with directory
+                self.subdirs.append(child)
             if child.is_file():
-                if child.stat().st_size > self.minsize:
-                    pass
+                if child.stat().st_size < self.minsize:
+                    print(child,child.stat().st_size)
+                    self.tarfiles.append(child)
+        self.tar()
+
+    def hash(self):
+        """Make a hash of the path to this directory. Used to uniquely identify
+           the archive tar file
+        """
+        return blake2b(bytes(str(self.path),encoding='ascii'),digest_size=6).hexdigest()
+
+    def tar(self):
+        """Create archive using tar, delete files after archiving
+        """
+
+        tarfile = self.path / Path('archive_' + self.hash() + '.tar')
+        tarcmd = ['tar', '-C', str(self.path), '--verify', '-c', '-f', str(tarfile)]
+
+        # The archive is local, so strip off all directory information
+        tarcmd.extend([ str(f.name) for f in self.tarfiles])
+
+        print(" ".join(tarcmd))
+        proc = subprocess.run(tarcmd)
+        if proc.returncode != 0:
+            print("Something went wrong with following command:\n{}".format(proc.args))
+        else:
+            # Remove the files we have archived. Can't use the --delete-files option
+            # of tar, as it breaks verification
+            for f in self.tarfiles:
+                f.unlink()
+            
 
     
 def is_netCDF(ncfile):
