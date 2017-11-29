@@ -68,6 +68,10 @@ class Directory(object):
         self.prepped = False
                 
     def archive(self):
+        self.gatherfiles()
+        self.tar()
+
+    def gatherfiles(self):
         """Archive all files in the directory that meet the size and type criteria
         """
         for child in self.path.iterdir():
@@ -78,7 +82,6 @@ class Directory(object):
                 if child.stat().st_size < self.minsize:
                     print(child,child.stat().st_size)
                     self.tarfiles.append(child)
-        self.tar()
 
     def hash(self):
         """Make a hash of the path to this directory. Used to uniquely identify
@@ -122,9 +125,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="Iterate over directories making the suitable for archiving them to tape storage")
 
-    parser.add_argument("-d","--dlevel", help="Set deflate level. Valid values 0-9 (default=5)", type=int, default=5, choices=range(0,10), metavar='{1-9}')
     # parser.add_argument("-l","--limited", help="Change unlimited dimension to fixed size (default is to not squash unlimited)", action='store_true')
-    parser.add_argument("-t","--tmpdir", help="Specify temporary directory to save compressed files", default='tmp.nc_compress')
     parser.add_argument("-v","--verbose", help="Verbose output", action='store_true')
     parser.add_argument("-r","--recursive", help="Recursively descend directories and run mdssprep on them (default False)", action='store_true')
     parser.add_argument("-p","--paranoid", help="Paranoid check : run nco ndiff on the resulting file ensure no data has been altered", action='store_true')
