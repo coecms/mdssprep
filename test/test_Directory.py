@@ -43,10 +43,10 @@ def make_file(path,size):
 def make_test_files():
     root.mkdir(parents=False,exist_ok=True)
     for f in range(1,10):
-        f = root / Path(str(f))
+        f = root / Path("file_"+str(f))
         f.touch()
     for f in range(10,100,10):
-        make_file(root / Path(str(f)),mdssprep.one_meg*f)
+        make_file(root / Path("file_"+str(f)),mdssprep.one_meg*f)
 
 def del_test_files():
     rmtree(root)
@@ -65,6 +65,6 @@ def test_make_directory_class():
 
     print(t.path, t.minsize, t.maxsize)
 
-    print(t.hash())
+    print(t.hashpath())
 
     t.archive()
