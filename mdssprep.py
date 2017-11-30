@@ -53,7 +53,7 @@ BLOCK_SIZE = 1024
 
 BUFSIZE = 8*1024
 
-policy = { "compress" : 'gz', "minsize" : 20.*one_meg, "maxsize" : 5.*one_tb, "uncompressible" : ["is_netCDF",] }
+policy = { "compress" : 'gz', "minsize" : 50.*one_meg, "maxsize" : 5.*one_tb, "uncompressible" : ["is_netCDF",] }
 
 strings = [*string.ascii_letters,*string.digits]
 
@@ -103,6 +103,10 @@ class Directory(object):
             setattr(self, key, val)
         self.tarfiles = []
         self.subdirs = []
+        self.totalfiles = 0
+        self.untarsize = 0
+        self.totarsize = 0
+        self.tarsize = 0
         self.prepped = False
         self.mode = 'w'
         if self.compress is not None:
@@ -111,6 +115,19 @@ class Directory(object):
     def archive(self):
         self.gatherfiles()
         self.tar()
+        self.report()
+
+    def report(self):
+        report_txt="""
+Settings        :: minsize: {} maxsize: {}
+Number of files :: orig: {} final: {}
+Size of files   :: orig: {} final: {}
+Average size    :: orig: {} final: {}
+        """
+        print(report_txt.format(self.minsize, self.maxsize,
+            self.totalfiles+len(self.tarfiles)-1, self.totalfiles,
+            self.untarsize+self.totarsize, self.untarsize+self.tarsize,
+            (self.untarsize+self.totarsize)/(self.totalfiles+len(self.tarfiles)-1), (self.untarsize+self.tarsize)/self.totalfiles))
 
     def gatherfiles(self):
         """Archive all files in the directory that meet the size and type criteria
@@ -120,9 +137,14 @@ class Directory(object):
                 # Do something with directory
                 self.subdirs.append(child)
             if child.is_file():
-                if child.stat().st_size < self.minsize:
-                    print(child,child.stat().st_size)
+                size = child.stat().st_size
+                self.totalfiles += 1
+                if size < self.minsize:
+                    # print(child,size)
                     self.tarfiles.append(child)
+                    self.totarsize += size
+                else:
+                    self.untarsize += size
 
     def hashpath(self):
         """Make a hash of the path to this directory. Used to uniquely identify
@@ -133,9 +155,7 @@ class Directory(object):
     def tar(self):
         """Create archive using tar, delete files after archiving
         """
-
         filename = self.path / Path('archive_' + self.hashpath() + '.tar.gz')
-
         try:
             with tarfile.open(name=filename,mode=self.mode,format=tarfile.PAX_FORMAT) as archive:
                 for f in self.tarfiles:
@@ -144,11 +164,12 @@ class Directory(object):
         finally:
             # Verify files have been archived correctly, then delete originals
             self.verify(filename,delete=True)
+            self.totalfiles += 1
+            self.tarsize += filename.stat().st_size
 
     def verify(self,filename,delete):
         """Verify files in archive are the same as on disk
         """
-        
         # Verify files have been archived correctly, then delete originals
         with tarfile.open(name=filename,mode='r:*') as archive:
             for f in self.tarfiles:
