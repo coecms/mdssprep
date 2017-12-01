@@ -86,9 +86,11 @@ def addmd5(archive, path):
     # Inherit group from file
     md5info.gid = path.stat().st_gid
     md5info.gname = path.group()
-    md5info.size = md5sum.digest_size
 
-    archive.addfile(tarinfo=md5info, fileobj=io.BytesIO(md5sum.digest()))
+    md5string = "{}: {}\n".format(path.name,md5sum.hexdigest())
+    md5info.size = len(md5string)
+
+    archive.addfile(tarinfo=md5info, fileobj=io.BytesIO(md5string.encode('ascii')))
 
 def verify(filename,files,delete):
     """Verify files in archive are the same as on disk
