@@ -87,7 +87,7 @@ def addmd5(archive, path):
     md5info.gid = path.stat().st_gid
     md5info.gname = path.group()
 
-    md5string = "{}: {}\n".format(path.name,md5sum.hexdigest())
+    md5string = "{}  {}\n".format(md5sum.hexdigest(),path.name)
     md5info.size = len(md5string)
 
     archive.addfile(tarinfo=md5info, fileobj=io.BytesIO(md5string.encode('ascii')))
@@ -160,6 +160,7 @@ Average size    :: orig: {} final: {}
         """Archive all files in the directory that meet the size and type criteria
         """
         tarfiles = []
+        notarfiles = []
         totsize = 0
         for child in self.path.iterdir():
             if child.is_dir():
@@ -178,9 +179,11 @@ Average size    :: orig: {} final: {}
                         tarfiles = []
                         totsize = 0
                 else:
+                    notarfiles.append(child)
                     self.untarsize += size
 
         self.tar(tarfiles,dryrun)
+        self.tar(notarfiles,dryrun,store=False)
 
     def hashpath(self):
         """Make a hash of the path to this directory. Used to uniquely identify
@@ -188,7 +191,7 @@ Average size    :: orig: {} final: {}
         """
         return blake2b(bytes(str(self.path),encoding='ascii'),digest_size=6).hexdigest()
 
-    def tar(self, files, dryrun):
+    def tar(self, files, dryrun, store=True):
         """Create archive using tar, delete files after archiving
         """
         if len(files) == 0: return
@@ -199,18 +202,20 @@ Average size    :: orig: {} final: {}
                 if self.verbose: print("Creating archive {}".format(filename))
                 with tarfile.open(name=filename,mode=self.mode,format=tarfile.PAX_FORMAT) as archive:
                     for f in files:
-                        archive.add(name=f,arcname=str(f.name))
+                        if store: archive.add(name=f,arcname=str(f.name))
                         addmd5(archive,f)
             finally:
-                # Verify files have been archived correctly, then delete originals
-                verify(filename,files,delete=True)
-                self.tarsize += filename.stat().st_size
-                self.tarfiles.extend(files)
+                if store:
+                    # Verify files have been archived correctly, then delete originals
+                    verify(filename,files,delete=True)
+                    self.tarsize += filename.stat().st_size
+                    self.tarfiles.extend(files)
         else:
-            # The reported size will be too large in the dry-run case (assuming compression
-            # of the archive), but this reports a best-case lower bound on average file size
-            self.tarsize += self.tottarsize
-            self.tarfiles.extend(files)
+            if store:
+                # The reported size will be too large in the dry-run case (assuming compression
+                # of the archive), but this reports a best-case lower bound on average file size
+                self.tarsize += self.tottarsize
+                self.tarfiles.extend(files)
 
 
     
