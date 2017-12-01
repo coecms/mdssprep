@@ -54,7 +54,7 @@ BLOCK_SIZE = 1024
 
 BUFSIZE = 8*1024
 
-policy = { "compress" : 'gz', "minsize" : 50.*one_meg, "maxsize" : 5.*one_tb, "uncompressible" : ["is_netCDF",] }
+policy = { "compress" : 'gz', "minsize" : 50.*one_meg, "maxarchivesize" : 5.*one_tb, "uncompressible" : ["is_netCDF",] }
 
 strings = [*string.ascii_letters,*string.digits]
 
@@ -90,6 +90,24 @@ def addmd5(archive, path):
 
     archive.addfile(tarinfo=md5info, fileobj=io.BytesIO(md5sum.digest()))
 
+def verify(filename,files,delete):
+    """Verify files in archive are the same as on disk
+    """
+    # Verify files have been archived correctly, then delete originals
+    with tarfile.open(name=filename,mode='r:*') as archive:
+        for f in files:
+           try:
+               with archive.extractfile(f.name) as target, f.open("rb") as source:
+                   while True:
+                       b1 = target.read(BUFSIZE)
+                       b2 = source.read(BUFSIZE)
+                       if b1 != b2:
+                           raise
+                       if not b1:
+                           break
+           finally:
+               f.unlink()
+
 class Directory(object):
     """A directory on the filesystem
 
@@ -110,34 +128,37 @@ class Directory(object):
         self.subdirs = []
         self.totalfiles = 0
         self.untarsize = 0
-        self.totarsize = 0
+        self.tottarsize = 0
         self.tarsize = 0
+        self.narchive = 0
         self.prepped = False
         self.mode = 'w'
+        self.verbose = True
         if self.compress is not None:
             self.mode = self.mode+':'+self.compress
                 
     def archive(self, dryrun=False):
-        self.gatherfiles()
-        self.tar(dryrun)
+        self.gatherfiles(dryrun)
         self.report()
 
     def report(self):
         report_txt="""
-Settings        :: minsize: {} maxsize: {}
+Settings        :: minsize: {} maxarchivesize: {}
 Number of files :: orig: {} final: {}
 Size of files   :: orig: {} final: {}
 Average size    :: orig: {} final: {}
         """
-        print(report_txt.format(pretty_size(self.minsize), pretty_size(self.maxsize),
-            self.totalfiles+len(self.tarfiles)-1, self.totalfiles,
-            pretty_size(self.untarsize+self.totarsize), pretty_size(self.untarsize+self.tarsize),
-            pretty_size((self.untarsize+self.totarsize)/(self.totalfiles+len(self.tarfiles)-1)),
-            pretty_size((self.untarsize+self.tarsize)/self.totalfiles)))
+        print(report_txt.format(pretty_size(self.minsize), pretty_size(self.maxarchivesize),
+            self.totalfiles, self.totalfiles - len(self.tarfiles) + self.narchive,
+            pretty_size(self.untarsize+self.tottarsize), pretty_size(self.untarsize+self.tarsize),
+            pretty_size((self.untarsize+self.tottarsize)/self.totalfiles),
+            pretty_size((self.untarsize+self.tarsize)/(self.totalfiles-len(self.tarfiles)+self.narchive))))
 
-    def gatherfiles(self):
+    def gatherfiles(self,dryrun):
         """Archive all files in the directory that meet the size and type criteria
         """
+        tarfiles = []
+        totsize = 0
         for child in self.path.iterdir():
             if child.is_dir():
                 # Do something with directory
@@ -147,10 +168,17 @@ Average size    :: orig: {} final: {}
                 self.totalfiles += 1
                 if size < self.minsize:
                     # print(child,size)
-                    self.tarfiles.append(child)
-                    self.totarsize += size
+                    tarfiles.append(child)
+                    totsize += size
+                    self.tottarsize += size
+                    if totsize > self.maxarchivesize:
+                        self.tar(tarfiles,dryrun)
+                        tarfiles = []
+                        totsize = 0
                 else:
                     self.untarsize += size
+
+        self.tar(tarfiles,dryrun)
 
     def hashpath(self):
         """Make a hash of the path to this directory. Used to uniquely identify
@@ -158,44 +186,29 @@ Average size    :: orig: {} final: {}
         """
         return blake2b(bytes(str(self.path),encoding='ascii'),digest_size=6).hexdigest()
 
-    def tar(self,dryrun):
+    def tar(self, files, dryrun):
         """Create archive using tar, delete files after archiving
         """
+        if len(files) == 0: return
+        self.narchive += 1
+        filename = self.path / Path('archive_{}_{:03d}.tar.gz'.format(self.hashpath(),self.narchive))
         if not dryrun:
-            filename = self.path / Path('archive_' + self.hashpath() + '.tar.gz')
             try:
+                if self.verbose: print("Creating archive {}".format(filename))
                 with tarfile.open(name=filename,mode=self.mode,format=tarfile.PAX_FORMAT) as archive:
-                    for f in self.tarfiles:
+                    for f in files:
                         archive.add(name=f,arcname=str(f.name))
                         addmd5(archive,f)
             finally:
                 # Verify files have been archived correctly, then delete originals
-                self.verify(filename,delete=True)
-                self.totalfiles += 1
+                verify(filename,files,delete=True)
                 self.tarsize += filename.stat().st_size
+                self.tarfiles.extend(files)
         else:
             # The reported size will be too large in the dry-run case (assuming compression
             # of the archive), but this reports a best-case lower bound on average file size
-            self.tarsize += self.totarsize
-            self.totalfiles += 1
-
-    def verify(self,filename,delete):
-        """Verify files in archive are the same as on disk
-        """
-        # Verify files have been archived correctly, then delete originals
-        with tarfile.open(name=filename,mode='r:*') as archive:
-            for f in self.tarfiles:
-              try:
-                  with archive.extractfile(f.name) as target, f.open("rb") as source:
-                      while True:
-                          b1 = target.read(BUFSIZE)
-                          b2 = source.read(BUFSIZE)
-                          if b1 != b2:
-                              raise
-                          if not b1:
-                              break
-              finally:
-                f.unlink()
+            self.tarsize += self.tottarsize
+            self.tarfiles.extend(files)
 
 
     
