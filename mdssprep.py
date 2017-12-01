@@ -31,6 +31,7 @@ import string
 import random
 from hashlib import blake2b, md5
 import tarfile
+from math import log
 
 from zlib import crc32
 import io
@@ -56,6 +57,10 @@ BUFSIZE = 8*1024
 policy = { "compress" : 'gz', "minsize" : 50.*one_meg, "maxsize" : 5.*one_tb, "uncompressible" : ["is_netCDF",] }
 
 strings = [*string.ascii_letters,*string.digits]
+
+def pretty_size(n,pow=0,b=1024,u='B',pre=['']+[p for p in'KMGTPEZY']):
+    pow,n=min(int(log(max(n*b**pow,1),b)),len(pre)-1),n*b**pow
+    return "%%.%if %%s%%s"%abs(pow%(-pow-1))%(n/b**float(pow),pre[pow],u)
 
 def md5path(path):
     """Return the md5 hash instance of a path instance
@@ -112,9 +117,9 @@ class Directory(object):
         if self.compress is not None:
             self.mode = self.mode+':'+self.compress
                 
-    def archive(self):
+    def archive(self, dryrun=False):
         self.gatherfiles()
-        self.tar()
+        self.tar(dryrun)
         self.report()
 
     def report(self):
@@ -124,10 +129,11 @@ Number of files :: orig: {} final: {}
 Size of files   :: orig: {} final: {}
 Average size    :: orig: {} final: {}
         """
-        print(report_txt.format(self.minsize, self.maxsize,
+        print(report_txt.format(pretty_size(self.minsize), pretty_size(self.maxsize),
             self.totalfiles+len(self.tarfiles)-1, self.totalfiles,
-            self.untarsize+self.totarsize, self.untarsize+self.tarsize,
-            (self.untarsize+self.totarsize)/(self.totalfiles+len(self.tarfiles)-1), (self.untarsize+self.tarsize)/self.totalfiles))
+            pretty_size(self.untarsize+self.totarsize), pretty_size(self.untarsize+self.tarsize),
+            pretty_size((self.untarsize+self.totarsize)/(self.totalfiles+len(self.tarfiles)-1)),
+            pretty_size((self.untarsize+self.tarsize)/self.totalfiles)))
 
     def gatherfiles(self):
         """Archive all files in the directory that meet the size and type criteria
@@ -152,20 +158,26 @@ Average size    :: orig: {} final: {}
         """
         return blake2b(bytes(str(self.path),encoding='ascii'),digest_size=6).hexdigest()
 
-    def tar(self):
+    def tar(self,dryrun):
         """Create archive using tar, delete files after archiving
         """
-        filename = self.path / Path('archive_' + self.hashpath() + '.tar.gz')
-        try:
-            with tarfile.open(name=filename,mode=self.mode,format=tarfile.PAX_FORMAT) as archive:
-                for f in self.tarfiles:
-                    archive.add(name=f,arcname=str(f.name))
-                    addmd5(archive,f)
-        finally:
-            # Verify files have been archived correctly, then delete originals
-            self.verify(filename,delete=True)
+        if not dryrun:
+            filename = self.path / Path('archive_' + self.hashpath() + '.tar.gz')
+            try:
+                with tarfile.open(name=filename,mode=self.mode,format=tarfile.PAX_FORMAT) as archive:
+                    for f in self.tarfiles:
+                        archive.add(name=f,arcname=str(f.name))
+                        addmd5(archive,f)
+            finally:
+                # Verify files have been archived correctly, then delete originals
+                self.verify(filename,delete=True)
+                self.totalfiles += 1
+                self.tarsize += filename.stat().st_size
+        else:
+            # The reported size will be too large in the dry-run case (assuming compression
+            # of the archive), but this reports a best-case lower bound on average file size
+            self.tarsize += self.totarsize
             self.totalfiles += 1
-            self.tarsize += filename.stat().st_size
 
     def verify(self,filename,delete):
         """Verify files in archive are the same as on disk

@@ -67,4 +67,4 @@ def test_make_directory_class():
 
     print(t.hashpath())
 
-    t.archive()
+    t.archive(dryrun=True)
