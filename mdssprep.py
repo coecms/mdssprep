@@ -32,6 +32,7 @@ import random
 from hashlib import blake2b, md5
 import tarfile
 from math import log
+from itertools import compress
 
 from zlib import crc32
 import io
@@ -160,7 +161,7 @@ Average size    :: orig: {} final: {}
         """Archive all files in the directory that meet the size and type criteria
         """
         tarfiles = []
-        notarfiles = []
+        store = []
         totsize = 0
         for child in self.path.iterdir():
             if child.is_dir():
@@ -169,21 +170,22 @@ Average size    :: orig: {} final: {}
             if child.is_file():
                 size = child.stat().st_size
                 self.totalfiles += 1
+                tarfiles.append(child)
                 if size < self.minsize:
-                    # print(child,size)
-                    tarfiles.append(child)
                     totsize += size
                     self.tottarsize += size
+                    self.tarsize += size
+                    store.append(True)
                     if totsize > self.maxarchivesize:
-                        self.tar(tarfiles,dryrun)
+                        self.tar(tarfiles,store,dryrun)
                         tarfiles = []
                         totsize = 0
+                        store = []
                 else:
-                    notarfiles.append(child)
                     self.untarsize += size
+                    store.append(False)
 
-        self.tar(tarfiles,dryrun)
-        self.tar(notarfiles,dryrun,store=False)
+        self.tar(tarfiles,store,dryrun)
 
     def hashpath(self):
         """Make a hash of the path to this directory. Used to uniquely identify
@@ -191,7 +193,7 @@ Average size    :: orig: {} final: {}
         """
         return blake2b(bytes(str(self.path),encoding='ascii'),digest_size=6).hexdigest()
 
-    def tar(self, files, dryrun, store=True):
+    def tar(self, files, storemask, dryrun):
         """Create archive using tar, delete files after archiving
         """
         if len(files) == 0: return
@@ -201,21 +203,18 @@ Average size    :: orig: {} final: {}
             try:
                 if self.verbose: print("Creating archive {}".format(filename))
                 with tarfile.open(name=filename,mode=self.mode,format=tarfile.PAX_FORMAT) as archive:
-                    for f in files:
+                    for f, store in zip(files, storemask):
                         if store: archive.add(name=f,arcname=str(f.name))
                         addmd5(archive,f)
             finally:
-                if store:
-                    # Verify files have been archived correctly, then delete originals
-                    verify(filename,files,delete=True)
-                    self.tarsize += filename.stat().st_size
-                    self.tarfiles.extend(files)
+                # Verify files have been archived correctly, then delete originals
+                verify(filename, list(compress(files,storemask)), delete=True)
         else:
-            if store:
-                # The reported size will be too large in the dry-run case (assuming compression
-                # of the archive), but this reports a best-case lower bound on average file size
-                self.tarsize += self.tottarsize
-                self.tarfiles.extend(files)
+            # The reported size will be too large in the dry-run case (assuming compression
+            # of the archive), but this reports a best-case lower bound on average file size
+            self.tarsize += self.tottarsize
+
+        self.tarfiles.extend(list(compress(files,storemask)))
 
 
     
