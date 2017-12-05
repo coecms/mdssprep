@@ -16,8 +16,6 @@ Prepare directories for archiving to mdssprep
   :target: https://landscape.io/github/coecms/mdssprep/master
 .. image:: https://codeclimate.com/github/coecms/mdssprep/badges/gpa.svg
   :target: https://codeclimate.com/github/coecms/mdssprep
-.. image:: https://badge.fury.io/py/mdssprep.svg
-  :target: https://pypi.python.org/pypi/mdssprep
 
 .. content-marker-for-sphinx
 

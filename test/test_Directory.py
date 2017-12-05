@@ -30,7 +30,7 @@ from shutil import rmtree
 
 sys.path.insert(1, os.path.join(sys.path[0], '..'))
 
-import mdssprep 
+from mdssprep import mdssprep
 
 verbose = True
 
