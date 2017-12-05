@@ -1,0 +1,9 @@
+name: mdssprep-dev
+
+channels:
+    - conda-forge
+    - defaults
+
+dependencies:
+    - python
+    - pbr
