@@ -44,7 +44,7 @@ def make_test_files():
     root.mkdir(parents=False,exist_ok=True)
     for f in range(1,30):
         make_file(root / Path("file_"+str(f)),mdssprep.one_meg*f)
-    for f in range(50,500,50):
+    for f in range(50,200,50):
         make_file(root / Path("file_"+str(f)),mdssprep.one_meg*f)
 
 def del_test_files():
@@ -62,5 +62,8 @@ def teardown_module(module):
 def test_make_directory_class():
     t = mdssprep.Directory('test/test_dir')
     t.archive(dryrun=True)
-    t = mdssprep.Directory('test/test_dir',maxarchivesize=mdssprep.one_meg*200.,minsize=mdssprep.one_meg*100.)
+    t = mdssprep.Directory('test/test_dir',exclude=['file_*3*','file_2??'],include=['file_*5*'],maxarchivesize=mdssprep.one_meg*200.,minsize=mdssprep.one_meg*100.)
     t.archive(dryrun=False)
+    # setup_module()
+    # t = mdssprep.Directory('test/test_dir',maxarchivesize=mdssprep.one_meg*200.,minsize=mdssprep.one_meg*100.)
+    # t.archive(dryrun=False)

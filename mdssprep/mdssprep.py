@@ -125,6 +125,8 @@ class Directory(object):
         """Return an mdssDirectory object"""
         self.path = Path(path)
         kwargs = {**policy, **kwargs}
+        self.include = []
+        self.exclude = []
         for key, val in kwargs.items():
             setattr(self, key, val)
         self.tarfiles = []
@@ -171,7 +173,19 @@ Average size    :: orig: {} final: {}
                 size = child.stat().st_size
                 self.totalfiles += 1
                 tarfiles.append(child)
-                if size < self.minsize:
+                exclude = False
+                include = False
+                for pattern in self.include:
+                    if child.match(pattern):
+                        if self.verbose: print("{} matched include filter {}\n".format(child.name,pattern))
+                        include = True
+                        break
+                for pattern in self.exclude:
+                    if child.match(pattern):
+                        if self.verbose: print("{} matched exlude filter {}\n".format(child.name,pattern))
+                        exclude = True
+                        break
+                if (size < self.minsize and not exclude) or include:
                     totsize += size
                     self.tottarsize += size
                     self.tarsize += size
