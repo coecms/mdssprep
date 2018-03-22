@@ -37,6 +37,9 @@ from itertools import compress
 from zlib import crc32
 import io
 
+# Local import
+from mdssprep.manifest import PrepManifest
+
 # A couple of hard-wired executable paths that might need changing
 
 # Need to use system time command explicitly, otherwise get crippled bash version
@@ -55,7 +58,7 @@ BLOCK_SIZE = 1024
 
 BUFSIZE = 8*1024
 
-policy = { "compress" : 'gz', "minsize" : 50.*one_meg, "maxarchivesize" : 5.*one_tb, "uncompressible" : ["is_netCDF",] }
+policy = { "compress" : 'gz', "minfilesize" : 50.*one_meg, "maxarchivesize" : 5.*one_tb, "uncompressible" : ["is_netCDF",] }
 
 strings = [*string.ascii_letters,*string.digits]
 
@@ -116,7 +119,7 @@ class Directory(object):
 
     Attributes:
         path: a Path object for the directory
-        minsize: size (in bytes) below which a file should be archived
+        minfilesize: size (in bytes) below which a file should be archived
         prepped: logical indicating if the directory has been prepared for archiving
         tarfiles: list of files to add to the archive
     """
@@ -148,12 +151,12 @@ class Directory(object):
 
     def report(self):
         report_txt="""
-Settings        :: minsize: {} maxarchivesize: {}
+Settings        :: minfilesize: {} maxarchivesize: {}
 Number of files :: orig: {} final: {}
 Size of files   :: orig: {} final: {}
 Average size    :: orig: {} final: {}
         """
-        print(report_txt.format(pretty_size(self.minsize), pretty_size(self.maxarchivesize),
+        print(report_txt.format(pretty_size(self.minfilesize), pretty_size(self.maxarchivesize),
             self.totalfiles, self.totalfiles - len(self.tarfiles) + self.narchive,
             pretty_size(self.untarsize+self.tottarsize), pretty_size(self.untarsize+self.tarsize),
             pretty_size((self.untarsize+self.tottarsize)/self.totalfiles),
@@ -185,7 +188,7 @@ Average size    :: orig: {} final: {}
                         if self.verbose: print("{} matched exlude filter {}\n".format(child.name,pattern))
                         exclude = True
                         break
-                if (size < self.minsize and not exclude) or include:
+                if (size < self.minfilesize and not exclude) or include:
                     totsize += size
                     self.tottarsize += size
                     self.tarsize += size
@@ -212,20 +215,26 @@ Average size    :: orig: {} final: {}
         """
         if len(files) == 0: return
         self.narchive += 1
+        manifest = PrepManifest(str(self.path / 'manifest.yaml'))
         filename = self.path / Path('archive_{}_{:03d}.tar.gz'.format(self.hashpath(),self.narchive))
         if not dryrun:
             try:
                 if self.verbose: print("Creating archive {}".format(filename))
                 with tarfile.open(name=filename,mode=self.mode,format=tarfile.PAX_FORMAT) as archive:
                     for f, store in zip(files, storemask):
-                        if store: archive.add(name=f,arcname=str(f.name))
-                        addmd5(archive,f)
+                        if store:
+                            archive.add(name=f,arcname=str(f.name))
+                            manifest.add(f,archive=str(archive.name))
+                            addmd5(archive,f)
+                        else:
+                            manifest.add(f)
             finally:
                 # Verify files have been archived correctly, then delete originals
                 verify(filename, list(compress(files,storemask)), delete=True)
+                manifest.dump()
         else:
             # The reported size will be too large in the dry-run case (assuming compression
-            # of the archive), but this reports a best-case lower bound on average file size
+            # of the archive), but this reports a worst-case lower bound on average file size
             self.tarsize += self.tottarsize
 
         self.tarfiles.extend(list(compress(files,storemask)))
