@@ -1,9 +1,10 @@
-name: mdssprep-dev
+name: mdssprep-dev-27
 
 channels:
+    - coecms
     - conda-forge
     - defaults
 
 dependencies:
-    - python
     - pbr
+    - yamanifest
