@@ -36,6 +36,7 @@ from itertools import compress
 
 from zlib import crc32
 import io
+import fs
 
 # Local import
 from mdssprep.manifest import PrepManifest
@@ -126,11 +127,10 @@ class Directory(object):
 
     def __init__(self, path, **kwargs):
         """Return an mdssDirectory object"""
-        self.path = Path(path)
-        self.parent = self.path.parent
+        self.path = fs.open_fs(path)
         kwargs = {**policy, **kwargs}
-        self.include = []
-        self.exclude = []
+        self.include = None
+        self.exclude = None
         for key, val in kwargs.items():
             setattr(self, key, val)
         self.tarfiles = []
@@ -145,6 +145,14 @@ class Directory(object):
         self.verbose = True
         if self.compress is not None:
             self.mode = self.mode+':'+self.compress
+        if self.include is not None:
+            if type(self.include) is str:
+                self.include = [ self.include, ]
+            self.include = fs.wildcard.get_matcher(self.include)
+        if self.exclude is not None:
+            if type(self.exclude) is str:
+                self.exclude = [ self.exclude, ]
+            self.exclude = fs.wildcard.get_matcher(self.exclude)
                 
     def archive(self, dryrun=False):
         self.gatherfiles(dryrun)
@@ -174,26 +182,23 @@ Average size    :: orig: {} final: {}
         tarfiles = []
         store = []
         totsize = 0
-        for child in self.path.iterdir():
+        for child in self.path.scandir('/',namespaces=['details']):
             if child.is_dir():
                 # Do something with directory
                 self.subdirs.append(child)
-            if child.is_file():
-                size = child.stat().st_size
+            else if child.is_file():
+                size = child.size
                 self.totalfiles += 1
                 tarfiles.append(child)
                 exclude = False
                 include = False
-                for pattern in self.include:
-                    if child.match(pattern):
-                        if self.verbose: print("{} matched include filter {}\n".format(child.name,pattern))
-                        include = True
-                        break
-                for pattern in self.exclude:
-                    if child.match(pattern):
-                        if self.verbose: print("{} matched exlude filter {}\n".format(child.name,pattern))
-                        exclude = True
-                        break
+                if self.include(child.name):
+                    if self.verbose: print("{} matched include filter\n".format(child.name))
+                    include = True
+                else if self.exclude(child.name):
+                    if self.verbose: print("{} matched exlude filter\n".format(child.name))
+                    exclude = True
+
                 if (size < self.minfilesize and not exclude) or include:
                     totsize += size
                     self.tottarsize += size
@@ -207,6 +212,10 @@ Average size    :: orig: {} final: {}
                 else:
                     self.untarsize += size
                     store.append(False)
+            else:
+                # Not a supported type, should emit some sort of warning ...
+                pass
+                
 
         self.tar(tarfiles,store,dryrun)
 
@@ -214,7 +223,7 @@ Average size    :: orig: {} final: {}
         """Make a hash of the path to this directory. Used to uniquely identify
            the archive tar file
         """
-        return blake2b(bytes(str(self.path),encoding='ascii'),digest_size=6).hexdigest()
+        return blake2b(bytes(str(self.root_path),encoding='ascii'),digest_size=6).hexdigest()
 
     def tar(self, files, storemask, dryrun):
         """Create archive using tar, delete files after archiving
