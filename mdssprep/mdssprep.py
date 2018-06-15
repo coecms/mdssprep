@@ -58,7 +58,7 @@ BLOCK_SIZE = 1024
 
 BUFSIZE = 8*1024
 
-policy = { "compress" : 'gz', "minfilesize" : 50.*one_meg, "maxarchivesize" : 5.*one_tb, "uncompressible" : ["is_netCDF",] }
+policy = { "compress" : 'gz', "minfilesize" : 50.*one_meg, "maxarchivesize" : 10.*one_gig, "uncompressible" : ["is_netCDF",] }
 
 strings = [*string.ascii_letters,*string.digits]
 
@@ -149,6 +149,11 @@ class Directory(object):
         self.gatherfiles(dryrun)
         self.report()
 
+        # Recursively descend through subdirectories
+        for path in self.subdirs:
+            d = Directory(path)
+            d.archive(dryrun)
+
     def report(self):
         report_txt="""
 Settings        :: minfilesize: {} maxarchivesize: {}
@@ -215,8 +220,9 @@ Average size    :: orig: {} final: {}
         """
         if len(files) == 0: return
         self.narchive += 1
-        manifest = PrepManifest(str(self.path / 'manifest.yaml'))
-        filename = self.path / Path('archive_{}_{:03d}.tar.gz'.format(self.hashpath(),self.narchive))
+        hashval = self.hashpath()
+        manifest = PrepManifest(str(self.path / 'mf_{}.yaml'.format(hashval)))
+        filename = self.path / Path('archive_{}_{:03d}.tar.gz'.format(hashval,self.narchive))
         if not dryrun:
             try:
                 if self.verbose: print("Creating archive {}".format(filename))
