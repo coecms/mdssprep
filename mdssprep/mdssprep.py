@@ -127,6 +127,7 @@ class Directory(object):
     def __init__(self, path, **kwargs):
         """Return an mdssDirectory object"""
         self.path = Path(path)
+        self.parent = self.path.parent
         kwargs = {**policy, **kwargs}
         self.include = []
         self.exclude = []
@@ -230,7 +231,7 @@ Average size    :: orig: {} final: {}
                     for f, store in zip(files, storemask):
                         if store:
                             archive.add(name=f,arcname=str(f.name))
-                            manifest.add(f,archive=str(archive.name))
+                            manifest.add(f,archive=str(filename.name))
                             addmd5(archive,f)
                         else:
                             manifest.add(f)
