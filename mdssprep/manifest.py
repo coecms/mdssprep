@@ -22,6 +22,7 @@ from copy import deepcopy
 from pwd import getpwnam, getpwuid
 from grp import getgrgid
 from os import stat
+import os.path
 from datetime import date
 
 fast_hashes = ['nchash','binhash']
@@ -35,6 +36,8 @@ class PrepManifest(Manifest):
 
     def __init__(self, path, hashes=None, **kwargs):
         super(PrepManifest, self).__init__(path, hashes, **kwargs)
+        # Add the root path to the header
+        self.header.update({ 'root' : os.path.dirname(os.path.dirname(os.path.abspath(path))) })
 
     def check_fast(self, reproduce=False, **args):
         """
