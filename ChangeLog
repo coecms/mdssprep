@@ -1,0 +1,19 @@
+CHANGES
+=======
+
+* Used yamanifest to store file metadata
+* Added filename filtering via exclude and include glob style patterns
+* Removed pypi badge
+* Added pypi cookiecutter template from https://github.com/ScottWales/cookiecutters
+* Increased files in test
+* Changed how the tar works. Now pass all files with mask, in this way can store md5 hash for all files, but only store the actual file for those that satisfy size criteria
+* Create md5 hashes for all files
+* Writing proper md5 file and hash strings to .md5 files
+* Moved verify out of class. Enforced size limit on archives, make multiple archives when limit reached
+* Added pretty printing of reported sizes and dry run option
+* Removed redundant command line processing. Will add back later
+* Track sizes and report changes
+* Added md5 hashes, file verification
+* Split archive into gather and split
+* Improved testing: added setup and teardown. Archiving working
+* Initial commit

@@ -27,13 +27,16 @@ Conda install::
 
     conda install -c coecms mdssprep
 
-Pip install (into a virtual environment)::
+Pip install (into a virtual environment)
 
     pip install mdssprep
 
 ---
 Use
 ---
+
+::
+    mdssprep <directory>
 
 -------
 Develop
