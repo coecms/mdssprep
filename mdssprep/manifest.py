@@ -79,7 +79,7 @@ class PrepManifest(Manifest):
         """
         self.add(filepath, hashfn, force, shortcircuit=True)
 
-    def add(self, filepaths=None, hashfn=None, force=False, shortcircuit=False, fullpath=None, archive=None):
+    def add(self, filepaths=None, hashfn=None, force=False, shortcircuit=False, fullpath=None):
         """
         Add hash value for filepath given a hashing function (hashfn).
         If no filepaths defined, default to all current filepaths, and in
@@ -107,6 +107,3 @@ class PrepManifest(Manifest):
                 "username":getpwuid(inf.st_uid).pw_name,
                 "group":getgrgid(inf.st_gid).gr_name,
             }
-
-        if archive is not None:
-            self.data[filepath]["archive"] = archive

@@ -97,11 +97,11 @@ def addmd5(archive, path):
 
     archive.addfile(tarinfo=md5info, fileobj=io.BytesIO(md5string.encode('ascii')))
 
-def verify(filename,files,delete):
+def verify(archive,files,delete):
     """Verify files in archive are the same as on disk
     """
     # Verify files have been archived correctly, then delete originals
-    with tarfile.open(name=filename,mode='r:*') as archive:
+    with tarfile.open(name=archive,mode='r:*') as archive:
         for f in files:
            try:
                with archive.extractfile(f.name) as target, f.open("rb") as source:
@@ -145,14 +145,18 @@ class Directory(object):
         self.verbose = True
         if self.compress is not None:
             self.mode = self.mode+':'+self.compress
-        if self.include is not None:
+        if self.include is None:
+            self.include = lambda _: False
+        else:
             if type(self.include) is str:
                 self.include = [ self.include, ]
-            self.include = fs.wildcard.get_matcher(self.include)
-        if self.exclude is not None:
+            self.include = fs.wildcard.get_matcher(self.include, case_sensitive=False)
+        if self.exclude is None:
+            self.exclude = lambda _: False
+        else:
             if type(self.exclude) is str:
                 self.exclude = [ self.exclude, ]
-            self.exclude = fs.wildcard.get_matcher(self.exclude)
+            self.exclude = fs.wildcard.get_matcher(self.exclude, case_sensitive=False)
                 
     def archive(self, dryrun=False):
         self.gatherfiles(dryrun)
@@ -179,23 +183,24 @@ Average size    :: orig: {} final: {}
     def gatherfiles(self,dryrun):
         """Archive all files in the directory that meet the size and type criteria
         """
-        tarfiles = []
-        store = []
+        files = []  # List of fs.info.Info objects
+        store = []  # List of flags if this file is to be archived
         totsize = 0
+        # In a fs object, the root of the "filesystem" is the root path
         for child in self.path.scandir('/',namespaces=['details']):
-            if child.is_dir():
+            if child.is_dir:
                 # Do something with directory
                 self.subdirs.append(child)
-            else if child.is_file():
+            elif child.is_file:
                 size = child.size
                 self.totalfiles += 1
-                tarfiles.append(child)
+                files.append(child)
                 exclude = False
                 include = False
                 if self.include(child.name):
                     if self.verbose: print("{} matched include filter\n".format(child.name))
                     include = True
-                else if self.exclude(child.name):
+                elif self.exclude(child.name):
                     if self.verbose: print("{} matched exlude filter\n".format(child.name))
                     exclude = True
 
@@ -205,8 +210,8 @@ Average size    :: orig: {} final: {}
                     self.tarsize += size
                     store.append(True)
                     if totsize > self.maxarchivesize:
-                        self.tar(tarfiles,store,dryrun)
-                        tarfiles = []
+                        self.tar(files,store,dryrun)
+                        files = []
                         totsize = 0
                         store = []
                 else:
@@ -217,13 +222,13 @@ Average size    :: orig: {} final: {}
                 pass
                 
 
-        self.tar(tarfiles,store,dryrun)
+        self.tar(files,store,dryrun)
 
     def hashpath(self):
         """Make a hash of the path to this directory. Used to uniquely identify
            the archive tar file
         """
-        return blake2b(bytes(str(self.root_path),encoding='ascii'),digest_size=6).hexdigest()
+        return blake2b(bytes(str(self.path.getsyspath('/')),encoding='ascii'),digest_size=6).hexdigest()
 
     def tar(self, files, storemask, dryrun):
         """Create archive using tar, delete files after archiving
@@ -231,22 +236,24 @@ Average size    :: orig: {} final: {}
         if len(files) == 0: return
         self.narchive += 1
         hashval = self.hashpath()
-        manifest = PrepManifest(str(self.path / 'mf_{}.yaml'.format(hashval)))
-        filename = self.path / Path('archive_{}_{:03d}.tar.gz'.format(hashval,self.narchive))
+        manifest = PrepManifest(self.path.getsyspath('mf_{}.yaml'.format(hashval)))
+        tarfilename = 'archive_{}_{:03d}.tar.gz'.format(hashval,self.narchive)
+        tarfilepath = self.path.getsyspath(tarfilename)
         if not dryrun:
             try:
-                if self.verbose: print("Creating archive {}".format(filename))
-                with tarfile.open(name=filename,mode=self.mode,format=tarfile.PAX_FORMAT) as archive:
+                if self.verbose: print("Creating archive {}".format(tarfilepath))
+                with tarfile.open(name=tarfilepath,mode=self.mode,format=tarfile.PAX_FORMAT) as archive:
                     for f, store in zip(files, storemask):
                         if store:
                             archive.add(name=f,arcname=str(f.name))
-                            manifest.add(f,archive=str(filename.name))
-                            addmd5(archive,f)
+                            # The path stored in the manifest has the tarfile name prepended to it
+                            manifest.add(fs.path.combine(tarfilename,f),fullpath=str(filename.name))
+                            # addmd5(archive,f)
                         else:
                             manifest.add(f)
             finally:
                 # Verify files have been archived correctly, then delete originals
-                verify(filename, list(compress(files,storemask)), delete=True)
+                verify(tarfilepath, list(compress(files,storemask)), delete=True)
                 manifest.dump()
         else:
             # The reported size will be too large in the dry-run case (assuming compression
