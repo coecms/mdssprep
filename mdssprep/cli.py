@@ -42,7 +42,6 @@ def main(args):
     """
 
     for dir in args.dirs:
-        # prepdir = mdssprep.Directory(dir,exclude=['file_*3*','file_2??'],include=['file_*5*'],maxarchivesize=mdssprep.one_meg*200.,minsize=mdssprep.one_meg*100.)
         prepdir = mdssprep.Directory(dir)
         prepdir.archive(dryrun=False)
 
