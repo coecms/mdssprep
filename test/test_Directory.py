@@ -28,11 +28,15 @@ import os, sys
 from pathlib import Path
 from shutil import rmtree
 
+import tarfile
+
 sys.path.insert(1, os.path.join(sys.path[0], '..'))
 
-from mdssprep import mdssprep
+from mdssprep import mdssprep, verify, set_policy
 
 verbose = True
+
+set_policy(compress=None)
 
 root = Path('test') / Path('test_dir')
 
@@ -48,7 +52,8 @@ def make_test_files():
         make_file(root / Path("file_"+str(f)),mdssprep.one_meg*f)
 
 def del_test_files():
-    rmtree(root)
+    for f in root.glob('*'):
+        f.unlink()
 
 def setup_module(module):
     if verbose: print ("setup_module      module:%s" % module.__name__)
@@ -62,8 +67,24 @@ def teardown_module(module):
 def test_make_directory_class():
     t = mdssprep.Directory('test/test_dir')
     t.archive(dryrun=True)
-    t = mdssprep.Directory('test/test_dir',exclude=['file_*3*','file_2??'],include=['file_*5*'],maxarchivesize=mdssprep.one_meg*200.,minsize=mdssprep.one_meg*100.)
+    t = mdssprep.Directory('test/test_dir',exclude=['file_*3*','file_2??'],include=['file_*5*'],compress=None,maxarchivesize=mdssprep.one_meg*200.,minsize=mdssprep.one_meg*100.)
+    # pytest.set_trace()
     t.archive(dryrun=False)
     # setup_module()
-    # t = mdssprep.Directory('test/test_dir',maxarchivesize=mdssprep.one_meg*200.,minsize=mdssprep.one_meg*100.)
+    t = mdssprep.Directory('test/test_dir',compress=None,maxarchivesize=mdssprep.one_meg*200.,minsize=mdssprep.one_meg*100.)
     # t.archive(dryrun=False)
+
+def test_verify():
+
+    path = 'test/test_dir/archive_8c70741daa87_001.tar'
+    assert(verify(path))
+
+    with tarfile.open(path, mode='a', format=tarfile.PAX_FORMAT) as archive:
+        extra = list(archive.members)[0]
+        extra.name = 'bogus'
+        extra.size = 20
+        extra.pax_headers = {'md5': 'bogus'}
+        with open("/dev/random", 'rb') as rando:
+            archive.addfile(extra, rando)
+
+    assert(not verify(path))
