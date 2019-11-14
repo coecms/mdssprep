@@ -32,7 +32,7 @@ import tarfile
 
 sys.path.insert(1, os.path.join(sys.path[0], '..'))
 
-from mdssprep import mdssprep, verify, set_policy
+from mdssprep import mdssprep, verify, set_policy, one_meg
 
 verbose = True
 
@@ -68,17 +68,17 @@ def test_make_directory_class():
     t = mdssprep.Directory('test/test_dir')
     t.archive(dryrun=True)
     t = mdssprep.Directory('test/test_dir',exclude=['file_*3*','file_2??'],include=['file_*5*'],compress=None,maxarchivesize=mdssprep.one_meg*200.,minsize=mdssprep.one_meg*100.)
-    # pytest.set_trace()
     t.archive(dryrun=False)
-    # setup_module()
     t = mdssprep.Directory('test/test_dir',compress=None,maxarchivesize=mdssprep.one_meg*200.,minsize=mdssprep.one_meg*100.)
-    # t.archive(dryrun=False)
+    t.archive(dryrun=False)
 
 def test_verify():
 
     path = 'test/test_dir/archive_8c70741daa87_001.tar'
     assert(verify(path))
 
+    # Add another member to the archive with a bogus md5 hash and check
+    # that it does not verify correctly
     with tarfile.open(path, mode='a', format=tarfile.PAX_FORMAT) as archive:
         extra = list(archive.members)[0]
         extra.name = 'bogus'
@@ -88,3 +88,55 @@ def test_verify():
             archive.addfile(extra, rando)
 
     assert(not verify(path))
+
+def test_policy():
+
+    del_test_files()
+    make_test_files()
+
+    # Check there are nine matching files initially
+    assert(len(list(root.glob('file_?'))) == 9)
+
+    t = mdssprep.Directory('test/test_dir',include=['file_?'],exclude=['*'],compress=None)
+    t.archive()
+
+    # All matching items should have been deleted as they have been archived
+    assert(len(list(root.glob('file_?'))) == 0)
+    assert(len(list(root.glob('archive_*.tar'))) == 1)
+
+    del_test_files()
+    make_test_files()
+
+    # Change default policy on minumum size, but don't specify explicitly. Should get result as above
+    set_policy(minfilesize=10.1*one_meg)
+
+    # Check there are nine matching files initially
+    assert(len(list(root.glob('file_?'))) == 9)
+
+    pytest.set_trace()
+    t = mdssprep.Directory('test/test_dir', compress=None)
+    t.archive()
+
+    # All matching items should have been deleted as they have been archived
+    assert(len(list(root.glob('file_?'))) == 0)
+    assert(len(list(root.glob('archive_*.tar'))) == 1)
+
+    del_test_files()
+    make_test_files()
+
+    # Specify compression
+    t = mdssprep.Directory('test/test_dir',include=['file_?'],exclude=['*'],compress='gz')
+    t.archive()
+
+    assert(len(list(root.glob('archive_*.tar.gz'))) == 1)
+
+    del_test_files()
+    make_test_files()
+
+    # Change default policy, but don't specify explicitly. Should get result as above
+    set_policy(compress='gz')
+
+    t = mdssprep.Directory('test/test_dir',include=['file_?'],exclude=['*'])
+    t.archive()
+
+    assert(len(list(root.glob('archive_*.tar.gz'))) == 1)

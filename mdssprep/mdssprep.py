@@ -58,7 +58,17 @@ BLOCK_SIZE = 1024
 
 BUFSIZE = 8*1024
 
-policy = { "compress" : 'gz', "minfilesize" : 50.*one_meg, "maxarchivesize" : 10.*one_gig, "uncompressible" : ["is_netCDF",] }
+# Default policy settings
+policy = { 
+           # Use gzip compression
+           "compress" : 'gz', 
+           # Size above which files will not be archived by default
+           "minfilesize" : 50.*one_meg, 
+           # Default maximum size for a single archive file
+           "maxarchivesize" : 10.*one_gig, 
+           # Not currently implemented TODO
+           # "uncompressible" : ["is_netCDF",], 
+         }
 
 strings = [*string.ascii_letters,*string.digits]
 
@@ -79,6 +89,7 @@ def is_netCDF(ncfile):
         return True
     except RuntimeError:
         return False
+
 def md5stream(handle):
     """Return the md5 hash instance of a path instance
     """
@@ -169,7 +180,7 @@ class Directory(object):
         self.narchive = 0
         self.prepped = False
         self.mode = 'w'
-        self.verbose = True
+        self.verbose = False
         if self.compress is not None:
             self.mode = self.mode+':'+self.compress
                 
@@ -227,7 +238,7 @@ Average size    :: orig: {} final: {}
                     self.tarsize += size
                     store.append(True)
                     if totsize > self.maxarchivesize:
-                        self.tar(tarfiles,store,dryrun)
+                        self.tar(list(compress(tarfiles,store)),dryrun)
                         tarfiles = []
                         totsize = 0
                         store = []
@@ -235,7 +246,7 @@ Average size    :: orig: {} final: {}
                     self.untarsize += size
                     store.append(False)
 
-        self.tar(tarfiles,store,dryrun)
+        self.tar(list(compress(tarfiles,store)),dryrun)
 
     def hashpath(self):
         """Make a hash of the path to this directory. Used to uniquely identify
@@ -243,7 +254,7 @@ Average size    :: orig: {} final: {}
         """
         return blake2b(bytes(str(self.path),encoding='ascii'),digest_size=6).hexdigest()
 
-    def tar(self, files, storemask, dryrun):
+    def tar(self, files, dryrun):
         """Create archive using tar, delete files after archiving
         """
         if len(files) == 0: return
@@ -251,7 +262,7 @@ Average size    :: orig: {} final: {}
         hashval = self.hashpath()
         filename = 'archive_{}_{:03d}.tar'.format(hashval,self.narchive)
         if self.compress:
-            filename = ":".join([filename, self.compress])
+            filename = ".".join([filename, self.compress])
         filename = self.path / Path(filename)
         if not dryrun:
             try:
@@ -260,20 +271,20 @@ Average size    :: orig: {} final: {}
                                   name=filename,
                                   mode=self.mode,
                                   format=tarfile.PAX_FORMAT) as archive:
-                    for path in compress(files,storemask):
+                    for path in files:
                         archive.add(name=path,
                                     filter=addmeta,
                                     recursive=False)
             finally:
                 # Verify files have been archived correctly, then delete originals
                 if verify(filename):
-                    for path in compress(files,storemask):
+                    for path in files:
                         os.unlink(path)
                 else:
-                    print("WARNING! Files not compressed correctly: "+files)
+                    print("WARNING! Files not compressed correctly: "+" ".join([str(f) for f in files]))
         else:
             # The reported size will be too large in the dry-run case (assuming compression
             # of the archive), but this reports a worst-case lower bound on average file size
             self.tarsize += self.tottarsize
 
-        self.tarfiles.extend(list(compress(files,storemask)))
+        self.tarfiles.extend(files)
