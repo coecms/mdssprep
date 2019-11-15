@@ -169,8 +169,6 @@ class Directory(object):
         kwargs = {**policy, **kwargs}
         self.include = []
         self.exclude = []
-        for key, val in kwargs.items():
-            setattr(self, key, val)
         self.tarfiles = []
         self.subdirs = []
         self.totalfiles = 0
@@ -181,8 +179,14 @@ class Directory(object):
         self.prepped = False
         self.mode = 'w'
         self.verbose = False
+        for key, val in kwargs.items():
+            setattr(self, key, val)
         if self.compress is not None:
             self.mode = self.mode+':'+self.compress
+        if type(self.exclude) is str:
+            self.exclude = [self.exclude, ]
+        if type(self.include) is str:
+            self.include = [self.include, ]
                 
     def archive(self, dryrun=False):
         self.gatherfiles(dryrun)
@@ -206,7 +210,7 @@ Average size    :: orig: {} final: {}
             pretty_size((self.untarsize+self.tottarsize)/self.totalfiles),
             pretty_size((self.untarsize+self.tarsize)/(self.totalfiles-len(self.tarfiles)+self.narchive))))
 
-    def gatherfiles(self,dryrun):
+    def gatherfiles(self, dryrun):
         """Archive all files in the directory that meet the size and type criteria
         """
         tarfiles = []
@@ -224,12 +228,12 @@ Average size    :: orig: {} final: {}
                 include = False
                 for pattern in self.include:
                     if child.match(pattern):
-                        if self.verbose: print("{} matched include filter {}\n".format(child.name,pattern))
+                        if self.verbose: print("{} matched include filter {}".format(child.name,pattern))
                         include = True
                         break
                 for pattern in self.exclude:
                     if child.match(pattern):
-                        if self.verbose: print("{} matched exlude filter {}\n".format(child.name,pattern))
+                        if self.verbose: print("{} matched exlude filter {}".format(child.name,pattern))
                         exclude = True
                         break
                 if (size < self.minfilesize and not exclude) or include:
@@ -249,22 +253,20 @@ Average size    :: orig: {} final: {}
         self.tar(list(compress(tarfiles,store)),dryrun)
 
     def hashpath(self):
-        """Make a hash of the path to this directory. Used to uniquely identify
-           the archive tar file
+        """
+        Make a hash of the path to this directory. Used to uniquely identify
+        the archive tar file
         """
         return blake2b(bytes(str(self.path),encoding='ascii'),digest_size=6).hexdigest()
 
     def tar(self, files, dryrun):
-        """Create archive using tar, delete files after archiving
+        """
+        Create archive using tar, delete files after archiving
         """
         if len(files) == 0: return
-        self.narchive += 1
-        hashval = self.hashpath()
-        filename = 'archive_{}_{:03d}.tar'.format(hashval,self.narchive)
-        if self.compress:
-            filename = ".".join([filename, self.compress])
-        filename = self.path / Path(filename)
+
         if not dryrun:
+            filename = self.make_tarfile_name()
             try:
                 if self.verbose: print("Creating archive {}".format(filename))
                 with tarfile.open(
@@ -288,3 +290,21 @@ Average size    :: orig: {} final: {}
             self.tarsize += self.tottarsize
 
         self.tarfiles.extend(files)
+
+    def make_tarfile_name(self):
+
+        hashval = self.hashpath()
+
+        # Loop until unique 
+        while True:
+            self.narchive += 1
+            filename = self.path / 'archive_{}_{:03d}.tar'.format(hashval,self.narchive)
+            # Make sure archive file does not already exist
+            if filename.exists(): continue
+            if self.compress:
+                filename = filename.with_suffix( filename.suffix + "." + self.compress )
+                # Make sure compressed archive file does not already exist
+                if filename.exists(): continue
+            break
+
+        return filename

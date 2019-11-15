@@ -113,7 +113,6 @@ def test_policy():
     # Check there are nine matching files initially
     assert(len(list(root.glob('file_?'))) == 9)
 
-    pytest.set_trace()
     t = mdssprep.Directory('test/test_dir', compress=None)
     t.archive()
 
@@ -140,3 +139,41 @@ def test_policy():
     t.archive()
 
     assert(len(list(root.glob('archive_*.tar.gz'))) == 1)
+
+def test_overwrite():
+
+    del_test_files()
+    make_test_files()
+
+    t = mdssprep.Directory(
+                           'test/test_dir', 
+                           compress='gz', 
+                           minfilesize=10.1*one_meg, 
+                          )
+    t.archive()
+
+    assert(len(list(root.glob('archive_*.tar.gz'))) == 1)
+
+    # Running again should have no effect ...
+    t = mdssprep.Directory(
+                           'test/test_dir', 
+                           compress='gz', 
+                           exclude=['*.tar*'],
+                           minfilesize=10.1*one_meg, 
+                          )
+    t.archive()
+
+    assert(len(list(root.glob('archive_*.tar.gz'))) == 1)
+
+    # pytest.set_trace()
+    t = mdssprep.Directory(
+                           'test/test_dir', 
+                           compress='gz', 
+                           exclude='*.tar*',
+                           verbose=True,
+                           minfilesize=30.1*one_meg, 
+                          )
+    t.archive()
+
+    print(len([*root.glob('file_*')]))
+    assert(len(list(root.glob('archive_*.tar.gz'))) == 2)
