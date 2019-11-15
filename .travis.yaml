@@ -1,0 +1,20 @@
+language: python
+python:
+    - '3.6'
+install:
+    - pip install --upgrade pytest coverage codecov
+    - pip install -r requirements.txt
+script:
+    - python -m pytest --cov=myproj -v -s test/test_Directory.py
+after_success:
+    - codecov
+# deploy:
+#   provider: pypi
+#   user:
+#   password:
+#     secure: 
+#   on:
+#     tags: true
+#     repo: aidanheerdegen/splitvar
+#   distributions: "sdist bdist_wheel"
+
