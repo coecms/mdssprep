@@ -94,7 +94,7 @@ class PrepManifest(Manifest):
             filepaths = [ str(f) for f in filepaths ] 
 
         # Call the add method for the class 
-        super(PrepManifest, self).add(filepaths=filepaths, hashfn=hashfn, force=force, shortcircuit=shortcircuit, fullpath=fullpath)
+        super(PrepManifest, self).add(filepaths=filepaths, hashfn=hashfn, force=force, shortcircuit=shortcircuit, fullpaths=fullpath)
         # self.add(filepaths=filepaths, hashfn=hashfn, force=force, shortcircuit=shortcircuit, fullpath=fullpath)
 
         # Add some metadata

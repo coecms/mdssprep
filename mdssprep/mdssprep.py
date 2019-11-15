@@ -58,24 +58,54 @@ BLOCK_SIZE = 1024
 
 BUFSIZE = 8*1024
 
-policy = { "compress" : 'gz', "minfilesize" : 50.*one_meg, "maxarchivesize" : 10.*one_gig, "uncompressible" : ["is_netCDF",] }
+# Default policy settings
+policy = { 
+           # Use gzip compression
+           "compress" : 'gz', 
+           # Size above which files will not be archived by default
+           "minfilesize" : 50.*one_meg, 
+           # Default maximum size for a single archive file
+           "maxarchivesize" : 10.*one_gig, 
+           # Not currently implemented TODO
+           # "uncompressible" : ["is_netCDF",], 
+         }
 
 strings = [*string.ascii_letters,*string.digits]
+
+def set_policy(**kwargs):
+    global policy
+    policy.update(**kwargs)
 
 def pretty_size(n,pow=0,b=1024,u='B',pre=['']+[p for p in'KMGTPEZY']):
     pow,n=min(int(log(max(n*b**pow,1),b)),len(pre)-1),n*b**pow
     return "%%.%if %%s%%s"%abs(pow%(-pow-1))%(n/b**float(pow),pre[pow],u)
 
-def md5path(path):
+def is_netCDF(ncfile):
+    """ Test to see if ncfile is a valid netCDF file
+    """
+    try:
+        tmp = nc.Dataset(ncfile)
+        tmp.close()
+        return True
+    except RuntimeError:
+        return False
+
+def md5stream(handle):
     """Return the md5 hash instance of a path instance
     """
     m = md5()
-    with path.open('rb') as f:
-        for chunk in iter(lambda: f.read(BLOCK_SIZE), b''):
-            m.update(chunk)
+    for chunk in iter(lambda: handle.read(BLOCK_SIZE), b''):
+        m.update(chunk)
     return m
 
-def addmd5(archive, path):
+def md5path(path):
+    """Return the md5 hash instance of a path instance
+    """
+    with path.open('rb') as f:
+        m = md5stream(f)
+    return m
+
+def oldaddmd5(archive, path):
     """Add the md5 hash of the path object to an archive
     """
     md5sum = md5path(path)
@@ -96,23 +126,31 @@ def addmd5(archive, path):
 
     archive.addfile(tarinfo=md5info, fileobj=io.BytesIO(md5string.encode('ascii')))
 
-def verify(filename,files,delete):
-    """Verify files in archive are the same as on disk
+def addmeta(info):
+    """
+    Add the md5 hash of the path object to an tarfile TarInfo object
+    and ensure path is local to the directory by replacing with just
+    the pathlib name attribute
+    """
+    info.pax_headers = {'md5': md5path(Path(info.name)).hexdigest()}
+    info.name = Path(info.name).name
+    return info
+
+def verify(filename):
+    """
+    Verify files in archive match their internal md5 checksums
+    Return True if all files match, False otherwise
     """
     # Verify files have been archived correctly, then delete originals
-    with tarfile.open(name=filename,mode='r:*') as archive:
-        for f in files:
-           try:
-               with archive.extractfile(f.name) as target, f.open("rb") as source:
-                   while True:
-                       b1 = target.read(BUFSIZE)
-                       b2 = source.read(BUFSIZE)
-                       if b1 != b2:
-                           raise
-                       if not b1:
-                           break
-           finally:
-               f.unlink()
+    with tarfile.open(name=filename, mode='r') as archive:
+        for f in archive.getmembers():
+            with archive.extractfile(f) as target:
+                md5sum = md5stream(target).hexdigest()
+                if md5sum != f.pax_headers['md5']:
+                    # Short-circuit and return on first hash mismatch
+                    print(f.name, md5sum, f.pax_headers['md5'])
+                    return False
+    return True
 
 class Directory(object):
     """A directory on the filesystem
@@ -131,8 +169,6 @@ class Directory(object):
         kwargs = {**policy, **kwargs}
         self.include = []
         self.exclude = []
-        for key, val in kwargs.items():
-            setattr(self, key, val)
         self.tarfiles = []
         self.subdirs = []
         self.totalfiles = 0
@@ -142,9 +178,15 @@ class Directory(object):
         self.narchive = 0
         self.prepped = False
         self.mode = 'w'
-        self.verbose = True
+        self.verbose = False
+        for key, val in kwargs.items():
+            setattr(self, key, val)
         if self.compress is not None:
             self.mode = self.mode+':'+self.compress
+        if type(self.exclude) is str:
+            self.exclude = [self.exclude, ]
+        if type(self.include) is str:
+            self.include = [self.include, ]
                 
     def archive(self, dryrun=False):
         self.gatherfiles(dryrun)
@@ -168,7 +210,7 @@ Average size    :: orig: {} final: {}
             pretty_size((self.untarsize+self.tottarsize)/self.totalfiles),
             pretty_size((self.untarsize+self.tarsize)/(self.totalfiles-len(self.tarfiles)+self.narchive))))
 
-    def gatherfiles(self,dryrun):
+    def gatherfiles(self, dryrun):
         """Archive all files in the directory that meet the size and type criteria
         """
         tarfiles = []
@@ -186,12 +228,12 @@ Average size    :: orig: {} final: {}
                 include = False
                 for pattern in self.include:
                     if child.match(pattern):
-                        if self.verbose: print("{} matched include filter {}\n".format(child.name,pattern))
+                        if self.verbose: print("{} matched include filter {}".format(child.name,pattern))
                         include = True
                         break
                 for pattern in self.exclude:
                     if child.match(pattern):
-                        if self.verbose: print("{} matched exlude filter {}\n".format(child.name,pattern))
+                        if self.verbose: print("{} matched exlude filter {}".format(child.name,pattern))
                         exclude = True
                         break
                 if (size < self.minfilesize and not exclude) or include:
@@ -200,7 +242,7 @@ Average size    :: orig: {} final: {}
                     self.tarsize += size
                     store.append(True)
                     if totsize > self.maxarchivesize:
-                        self.tar(tarfiles,store,dryrun)
+                        self.tar(list(compress(tarfiles,store)),dryrun)
                         tarfiles = []
                         totsize = 0
                         store = []
@@ -208,52 +250,61 @@ Average size    :: orig: {} final: {}
                     self.untarsize += size
                     store.append(False)
 
-        self.tar(tarfiles,store,dryrun)
+        self.tar(list(compress(tarfiles,store)),dryrun)
 
     def hashpath(self):
-        """Make a hash of the path to this directory. Used to uniquely identify
-           the archive tar file
+        """
+        Make a hash of the path to this directory. Used to uniquely identify
+        the archive tar file
         """
         return blake2b(bytes(str(self.path),encoding='ascii'),digest_size=6).hexdigest()
 
-    def tar(self, files, storemask, dryrun):
-        """Create archive using tar, delete files after archiving
+    def tar(self, files, dryrun):
+        """
+        Create archive using tar, delete files after archiving
         """
         if len(files) == 0: return
-        self.narchive += 1
-        hashval = self.hashpath()
-        manifest = PrepManifest(str(self.path / 'mf_{}.yaml'.format(hashval)))
-        filename = self.path / Path('archive_{}_{:03d}.tar.gz'.format(hashval,self.narchive))
+
         if not dryrun:
+            filename = self.make_tarfile_name()
             try:
                 if self.verbose: print("Creating archive {}".format(filename))
-                with tarfile.open(name=filename,mode=self.mode,format=tarfile.PAX_FORMAT) as archive:
-                    for f, store in zip(files, storemask):
-                        if store:
-                            archive.add(name=f,arcname=str(f.name))
-                            manifest.add(f,archive=str(filename.name))
-                            addmd5(archive,f)
-                        else:
-                            manifest.add(f)
+                with tarfile.open(
+                                  name=filename,
+                                  mode=self.mode,
+                                  format=tarfile.PAX_FORMAT) as archive:
+                    for path in files:
+                        archive.add(name=path,
+                                    filter=addmeta,
+                                    recursive=False)
             finally:
                 # Verify files have been archived correctly, then delete originals
-                verify(filename, list(compress(files,storemask)), delete=True)
-                manifest.dump()
+                if verify(filename):
+                    for path in files:
+                        os.unlink(path)
+                else:
+                    print("WARNING! Files not compressed correctly: "+" ".join([str(f) for f in files]))
         else:
             # The reported size will be too large in the dry-run case (assuming compression
             # of the archive), but this reports a worst-case lower bound on average file size
             self.tarsize += self.tottarsize
 
-        self.tarfiles.extend(list(compress(files,storemask)))
+        self.tarfiles.extend(files)
 
+    def make_tarfile_name(self):
 
-    
-def is_netCDF(ncfile):
-    """ Test to see if ncfile is a valid netCDF file
-    """
-    try:
-        tmp = nc.Dataset(ncfile)
-        tmp.close()
-        return True
-    except RuntimeError:
-        return False
+        hashval = self.hashpath()
+
+        # Loop until unique 
+        while True:
+            self.narchive += 1
+            filename = self.path / 'archive_{}_{:03d}.tar'.format(hashval,self.narchive)
+            # Make sure archive file does not already exist
+            if filename.exists(): continue
+            if self.compress:
+                filename = filename.with_suffix( filename.suffix + "." + self.compress )
+                # Make sure compressed archive file does not already exist
+                if filename.exists(): continue
+            break
+
+        return filename
