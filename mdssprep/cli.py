@@ -30,8 +30,8 @@ def parse_args(args):
     """
     parser = argparse.ArgumentParser(description="Run mdssprep on one or more directories")
 
-    parser.add_argument('-n','--name', default='manifest.yaml', action='store', help='Manifest file name')
-    parser.add_argument("-s","--hashes", help="Use only these hashing functions", action='append')
+    parser.add_argument("-n","--dryrun", help="Dry run, no files archived", action='store_true')
+    parser.add_argument("-v","--verbose", help="Verbose output", action='store_true')
     parser.add_argument("dirs", help="Directories to prep for mdss", nargs='+')
 
     return parser.parse_args(args)
@@ -41,9 +41,10 @@ def main(args):
     Main routine. Takes return value from parse.parse_args as input
     """
 
+    print(vars(args))
     for dir in args.dirs:
-        prepdir = mdssprep.Directory(dir)
-        prepdir.archive(dryrun=False)
+        prepdir = mdssprep.Directory(dir, **vars(args))
+        prepdir.archive(dryrun=args.dryrun)
 
 def main_parse_args(args):
     """
